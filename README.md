@@ -3,6 +3,8 @@
 A daemon that watches Linux USB hot-plug events and passes matching devices through to a libvirt guest.
 No udev rules or other host configuration are required.
 
+[![The latest version of the libvirt-hotplug-usb crate on crates.io](https://img.shields.io/crates/v/libvirt-hotplug-usb)](https://crates.io/crates/libvirt-hotplug-usb)
+
 
 ## Building
 
