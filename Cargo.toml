@@ -1,0 +1,20 @@
+[package]
+name = "libvirt-hotplug-usb"
+version = "0.1.0"
+authors = ["cyrozap"]
+license = "GPL-3.0-or-later"
+readme = "README.md"
+description = "A daemon that watches Linux USB hot-plug events and passes matching devices through to a libvirt guest."
+repository = "https://github.com/cyrozap/libvirt-hotplug-usb"
+categories = ["command-line-utilities"]
+edition = "2024"
+
+[dependencies]
+clap = { version = "4.6", features = ["derive"] }
+log = "0.4"
+env_logger = "0.11"
+
+[features]
+default = []
+# Link against libvirt at build time instead of loading libvirt.so.0 at runtime.
+link-virt = []

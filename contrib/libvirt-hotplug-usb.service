@@ -1,0 +1,18 @@
+[Unit]
+Description=Hot-plug matching USB devices into a libvirt guest
+After=libvirtd.service
+Wants=libvirtd.service
+
+[Service]
+Type=simple
+# Adjust the domain and rules for your setup. Run as root (or a user with
+# sufficient privileges to access libvirt's system socket and kernel uevents).
+ExecStart=/usr/local/bin/libvirt-hotplug-usb \
+    --connect qemu:///system \
+    --domain myvm \
+    --rule 'id=1234:abcd'
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
