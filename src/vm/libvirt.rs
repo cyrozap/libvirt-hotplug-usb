@@ -42,10 +42,16 @@ type DomainLookupByNameFn = unsafe extern "C" fn(VirConnectPtr, *const c_char) -
 type DomainFreeFn = unsafe extern "C" fn(VirDomainPtr) -> c_int;
 type DomainIsActiveFn = unsafe extern "C" fn(VirDomainPtr) -> c_int;
 type DomainDeviceFlagsFn = unsafe extern "C" fn(VirDomainPtr, *const c_char, c_uint) -> c_int;
+type DomainGetXmlDescFn = unsafe extern "C" fn(VirDomainPtr, c_uint) -> *mut c_char;
 type LastErrorMessageFn = unsafe extern "C" fn() -> *const c_char;
 type InitializeFn = unsafe extern "C" fn() -> c_int;
 type SetErrorFuncFn =
     unsafe extern "C" fn(*mut c_void, extern "C" fn(*mut c_void, *mut c_void)) -> c_int;
+
+unsafe extern "C" {
+    /// libc `free`, used to release strings returned by libvirt.
+    fn free(ptr: *mut c_void);
+}
 
 /// libvirt's default error logging writes to stderr; replace it with a no-op
 /// because errors are surfaced through `virGetLastErrorMessage` instead.
@@ -60,6 +66,7 @@ struct Api {
     domain_is_active: DomainIsActiveFn,
     domain_attach_device_flags: DomainDeviceFlagsFn,
     domain_detach_device_flags: DomainDeviceFlagsFn,
+    domain_get_xml_desc: DomainGetXmlDescFn,
     last_error_message: LastErrorMessageFn,
     initialize: InitializeFn,
     set_error_func: SetErrorFuncFn,
@@ -108,6 +115,7 @@ mod loading {
                     domain_is_active: resolve(handle, "virDomainIsActive")?,
                     domain_attach_device_flags: resolve(handle, "virDomainAttachDeviceFlags")?,
                     domain_detach_device_flags: resolve(handle, "virDomainDetachDeviceFlags")?,
+                    domain_get_xml_desc: resolve(handle, "virDomainGetXMLDesc")?,
                     last_error_message: resolve(handle, "virGetLastErrorMessage")?,
                     initialize: resolve(handle, "virInitialize")?,
                     set_error_func: resolve(handle, "virSetErrorFunc")?,
@@ -166,6 +174,7 @@ mod loading {
             xml: *const c_char,
             flags: c_uint,
         ) -> std::os::raw::c_int;
+        fn virDomainGetXMLDesc(domain: *mut c_void, flags: c_uint) -> *mut c_char;
         fn virGetLastErrorMessage() -> *const c_char;
         fn virInitialize() -> std::os::raw::c_int;
         fn virSetErrorFunc(
@@ -184,6 +193,7 @@ mod loading {
                 domain_is_active: virDomainIsActive,
                 domain_attach_device_flags: virDomainAttachDeviceFlags,
                 domain_detach_device_flags: virDomainDetachDeviceFlags,
+                domain_get_xml_desc: virDomainGetXMLDesc,
                 last_error_message: virGetLastErrorMessage,
                 initialize: virInitialize,
                 set_error_func: virSetErrorFunc,
@@ -303,6 +313,22 @@ impl VmBackend for LibvirtBackend {
             return Err(Error::libvirt(msg));
         }
         Ok(r == 1)
+    }
+
+    fn domain_xml(&mut self) -> Result<String> {
+        self.ensure()?;
+        // SAFETY: `self.domain` is non-null after `ensure`.
+        let ptr = unsafe { (self.api.domain_get_xml_desc)(self.domain, 0) };
+        if ptr.is_null() {
+            return Err(Error::libvirt(self.last_error()));
+        }
+        // SAFETY: non-null NUL-terminated string owned by libvirt.
+        let xml = unsafe { CStr::from_ptr(ptr) }
+            .to_string_lossy()
+            .into_owned();
+        // SAFETY: libvirt strings returned by this API are freed with free().
+        unsafe { free(ptr.cast()) };
+        Ok(xml)
     }
 
     fn attach(&mut self, xml: &str) -> Result<()> {

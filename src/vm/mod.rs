@@ -28,6 +28,8 @@ pub mod mock;
 pub trait VmBackend {
     /// Whether the target domain is currently running.
     fn is_active(&mut self) -> Result<bool>;
+    /// The current (live) domain XML.
+    fn domain_xml(&mut self) -> Result<String>;
     /// Attach the host device described by `xml`.
     fn attach(&mut self, xml: &str) -> Result<()>;
     /// Detach the host device described by `xml`.
@@ -40,6 +42,10 @@ pub struct DryRunBackend;
 impl VmBackend for DryRunBackend {
     fn is_active(&mut self) -> Result<bool> {
         Ok(false)
+    }
+
+    fn domain_xml(&mut self) -> Result<String> {
+        Ok(String::new())
     }
 
     fn attach(&mut self, _xml: &str) -> Result<()> {

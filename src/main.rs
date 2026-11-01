@@ -17,6 +17,7 @@
 
 mod cli;
 mod daemon;
+mod detach;
 mod error;
 mod hostdev;
 mod monitor;
@@ -67,6 +68,18 @@ fn run(cli: Cli) -> error::Result<()> {
         rules.push(cli::parse_rule(expression)?);
     }
     rule::resolve_bus_paths(&mut rules)?;
+
+    if cli.detach_matching {
+        let source = SysfsSource::new();
+        let mut backend = LibvirtBackend::new(cli.connect.clone(), cli.domain.clone())?;
+        let count = detach::detach_matching(&mut backend, &source, &rules, cli.dry_run)?;
+        if cli.dry_run {
+            info!("{count} matching USB hostdev(s); nothing detached (dry run)");
+        } else {
+            info!("detached {count} matching USB hostdev(s)");
+        }
+        return Ok(());
+    }
 
     signal::install()?;
 

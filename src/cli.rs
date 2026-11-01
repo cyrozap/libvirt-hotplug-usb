@@ -45,6 +45,12 @@ pub struct Cli {
     #[arg(short = 'r', long = "rule", value_name = "EXPR", required = true)]
     pub rules: Vec<String>,
 
+    /// Detach USB hostdevs matching the rules from the running domain, then exit.
+    ///
+    /// Useful for freeing guest USB ports occupied by stale hostdevs.
+    #[arg(long = "detach-matching")]
+    pub detach_matching: bool,
+
     /// Detach devices this process attached when it exits.
     #[arg(long = "detach-on-exit")]
     pub detach_on_exit: bool,

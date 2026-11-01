@@ -26,7 +26,12 @@ use super::VmBackend;
 #[derive(Default)]
 pub struct MockBackend {
     pub active: bool,
-    pub fail_attach: bool,
+    /// If set, every `attach` fails with this libvirt-style message.
+    pub attach_error: Option<String>,
+    /// If set, the next `attach` fails with this message and then clears.
+    pub attach_error_once: Option<String>,
+    /// XML returned by `domain_xml`.
+    pub domain_xml: String,
     pub attaches: RefCell<Vec<String>>,
     pub detaches: RefCell<Vec<String>>,
 }
@@ -45,9 +50,16 @@ impl VmBackend for MockBackend {
         Ok(self.active)
     }
 
+    fn domain_xml(&mut self) -> Result<String> {
+        Ok(self.domain_xml.clone())
+    }
+
     fn attach(&mut self, xml: &str) -> Result<()> {
-        if self.fail_attach {
-            return Err(Error::libvirt("mock attach failure"));
+        if let Some(message) = self.attach_error_once.take() {
+            return Err(Error::libvirt(message));
+        }
+        if let Some(message) = &self.attach_error {
+            return Err(Error::libvirt(message.clone()));
         }
         self.attaches.borrow_mut().push(xml.to_string());
         Ok(())

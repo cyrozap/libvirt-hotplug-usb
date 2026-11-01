@@ -27,6 +27,7 @@ libvirt-hotplug-usb [OPTIONS] --domain <NAME> --rule <EXPR>...
   -c, --connect <URI>    libvirt URI (default qemu:///system)
   -d, --domain <NAME>    target domain (required)
   -r, --rule <EXPR>      match rule, repeatable (rules are ORed)
+      --detach-matching  detach matching hostdevs from the running domain, then exit
       --detach-on-exit   detach devices this process attached on exit
       --dry-run          log matching devices without attaching
   -v, --verbose          increase verbosity (repeatable)
@@ -105,6 +106,64 @@ Matching devices are hot-plugged into the target domain with libvirt's `virDomai
 </hostdev>
 ```
 
+When a device is unplugged, the daemon detaches its hostdev so the guest USB port is freed, and a periodic sweep removes hostdevs whose host device has disappeared. This prevents repeated replugs from exhausting the guest's USB ports.
+
+
+## Troubleshooting
+
+### `failed to attach ...: internal error: No free USB ports`
+
+libvirt assigns one *guest* USB port to each passed-through device. `qemu-xhci` controllers default to only **4 ports**, and QEMU keeps a passed-through `usb-host` device (and its guest port) when the physical device is unplugged.
+Repeated replugs, or attaching more devices than there are ports, exhaust the guest's USB topology.
+
+Inspect the live domain:
+
+```console
+$ virsh dumpxml --domain myvm | grep -c "hostdev mode='subsystem' type='usb'"
+$ virsh dumpxml --domain myvm | grep "controller type='usb'"
+$ virsh qemu-monitor-command myvm --hmp 'info usb'
+```
+
+The daemon normally prevents this automatically:
+
+- When a device is unplugged, the daemon immediately detaches its hostdev from the guest, freeing the guest port.
+- At startup and every few seconds it reads the live domain XML and detaches hostdevs whose host device has disappeared and which match your rules.
+
+If ports are still exhausted (for example, leftovers from a missed event), free them immediately with `--detach-matching`, which detaches every hostdev (working or stale) whose host device matches your rules:
+
+```console
+# Preview what would be detached, then detach:
+$ libvirt-hotplug-usb -d myvm -r 'id=1234:abcd' --detach-matching --dry-run
+$ libvirt-hotplug-usb -d myvm -r 'id=1234:abcd' --detach-matching
+```
+
+The domain must be running.
+For a device that is no longer present on the host, only information contained in the domain XML is available, so `id=` and `bus=` rules can still match while `serial=`, `port=` and `hub(...)` rules cannot.
+However, the automatic per-unplug cleanup uses the hostdev the daemon itself attached, so it works for all rule types.
+
+Alternatively, because hostdevs attached with `--live` (as this daemon does) are not in the persistent configuration, a guest restart clears all of them:
+
+```console
+$ virsh shutdown myvm && virsh start myvm   # or: virsh destroy myvm
+```
+
+Increase capacity permanently (requires a guest power cycle; USB controllers cannot be hot-added):
+
+```console
+$ virsh edit myvm
+```
+
+```xml
+<controller type='usb' index='0' model='qemu-xhci' ports='15'/>
+<!-- and/or a second controller -->
+<controller type='usb' index='1' model='qemu-xhci' ports='8'/>
+```
+
+`ports` is effectively capped at 15 per controller.
+
+The daemon detaches a hostdev it previously created before re-attaching a device that reappears on the same port, which prevents most replug-related port leaks.
+It also recognises libvirt's "already in use" error (e.g. after a daemon restart) and tracks the device as already attached instead of retrying.
+
 
 ## Known limitations
 
@@ -112,4 +171,4 @@ Matching devices are hot-plugged into the target domain with libvirt's `virDomai
 - The daemon needs to be restarted to add/remove rules.
 - One target domain per process.
 - The daemon is single-threaded--a slow libvirt call briefly delays event handling.
-- A physically re-plugged device that the domain still references may require a detach before re-attach.
+- If the guest's USB ports are exhausted, attach fails and is logged; the daemon does not add controllers or ports itself (see Troubleshooting).
